@@ -1,5 +1,5 @@
 // 画面の部品はキャッシュから、論文データは最新を優先（つながらない時はキャッシュ）
-var CACHE = "anesth-daily-v2";
+var CACHE = "anesth-daily-v3";
 var SHELL = ["./", "index.html", "manifest.webmanifest", "icon.svg"];
 self.addEventListener("install", function(e){
   e.waitUntil(caches.open(CACHE).then(function(c){ return c.addAll(SHELL.concat(["papers.json"])); }));
