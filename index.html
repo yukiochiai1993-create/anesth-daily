@@ -71,6 +71,13 @@ button.primary{background:var(--accent);color:var(--accent-ink);border-color:var
 .grp .empty{color:var(--muted);font-size:14px;margin:0}
 .row .d{color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
 .back{margin-bottom:12px}
+.filters{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.filters button{min-height:40px;padding:6px 12px}
+.filters button[aria-pressed=true]{background:var(--tint);border-color:var(--accent);color:var(--accent);font-weight:700}
+.mk{font-weight:700;color:var(--accent);min-width:1.2em}
+.mk.bad{color:#b3261e}
+.favb[aria-pressed=true]{background:var(--tint);border-color:var(--accent);color:var(--accent);font-weight:700}
+.actions button{min-height:44px}
 </style>
 </head>
 <body>
@@ -79,6 +86,7 @@ button.primary{background:var(--accent);color:var(--accent-ink);border-color:var
     <h1>麻酔 毎日1本</h1>
     <div class="date" id="date"></div>
   </header>
+  <p class="note" id="streak" style="margin:0 0 10px"></p>
   <div class="tabs"><button type="button" id="tabToday" aria-pressed="true">今日の1本</button><button type="button" id="tabBack" aria-pressed="false">バックナンバー</button></div>
   <article class="card" id="card"></article>
   <div id="back" hidden></div>
@@ -93,6 +101,12 @@ var THEMES = ["気道管理","区域麻酔","産科麻酔","小児麻酔","循�
 var PAPERS = [];
 
 var PER = THEMES.length;
+
+var S = {open:{}, quiz:{}, fav:{}};
+try { var raw = localStorage.getItem("anesthDaily1"); if (raw) { var o = JSON.parse(raw); S.open = o.open || {}; S.quiz = o.quiz || {}; S.fav = o.fav || {}; } } catch(e) {}
+function save(){ try { localStorage.setItem("anesthDaily1", JSON.stringify(S)); } catch(e) {} }
+function streak(today){ var n = 0; while (S.open[today - n]) n++; return n; }
+var FILTER = "all";
 
 function todayIndex(){
   var n = new Date();
@@ -115,8 +129,10 @@ function list(items){ return '<ul>' + items.map(function(f){ return '<li>' + esc
 function render(dayArg){
   var card = document.getElementById("card");
   if (!PAPERS.length) { card.innerHTML = '<p>論文データを読み込めませんでした。ページを開き直してください。</p>'; return; }
-  var day = (typeof dayArg === "number") ? dayArg : todayIndex();
+  var isToday = (typeof dayArg !== "number");
+  var day = isToday ? todayIndex() : dayArg;
   var p = paperFor(day);
+  if (isToday) { S.open[day] = 1; save(); document.getElementById("streak").textContent = "連続 " + streak(day) + " 日"; }
   document.getElementById("date").textContent = fmt(day);
   card.innerHTML = '<span class="chip">' + esc(THEMES[p.theme]) + '</span>' +
     '<h2>' + esc(p.title) + '</h2><p class="cite">' + esc(p.cite) + '</p>' +
@@ -127,8 +143,14 @@ function render(dayArg){
     '<h3>限界</h3>' + list(p.limits) +
     '<h3>臨床での意味</h3><p class="lead">' + esc(p.meaning) + '</p>' +
     '<h3>確認クイズ</h3><div class="quiz" id="quiz"></div>' +
-    '<div class="actions"><a href="' + esc(p.url) + '" target="_blank" rel="noopener">原著を開く（PubMed）</a></div>' +
+    '<div class="actions"><button type="button" class="favb" id="favb" aria-pressed="' + (S.fav[p.title] ? "true" : "false") + '">' + (S.fav[p.title] ? "★ お気に入り済み" : "☆ お気に入りに入れる") + '</button><a href="' + esc(p.url) + '" target="_blank" rel="noopener">原著を開く（PubMed）</a></div>' +
     '<p class="note">要約はAIが作成しました。診療に使う前に、必ず原著で数値を確認してください。</p>';
+  document.getElementById("favb").onclick = function(){
+    if (S.fav[p.title]) delete S.fav[p.title]; else S.fav[p.title] = 1;
+    save(); var on = !!S.fav[p.title];
+    this.setAttribute("aria-pressed", on ? "true" : "false");
+    this.textContent = on ? "★ お気に入り済み" : "☆ お気に入りに入れる";
+  };
   quiz(p);
 }
 function quiz(p){
@@ -145,6 +167,7 @@ function quiz(p){
         if (+x.getAttribute("data-i") === q.answer) x.className += " right";
       });
       if (!ok) b.className += " wrong";
+      S.quiz[p.title] = ok ? 1 : 0; save();
       document.getElementById("fb").textContent = (ok ? "正解。" : "不正解。") + q.explain;
     };
   });
@@ -160,24 +183,36 @@ function showTab(name){
   window.scrollTo(0, 0);
 }
 function renderBack(){
-  var box = document.getElementById("back"), today = todayIndex(), seen = {}, by = {};
+  var box = document.getElementById("back"), today = todayIndex(), seen = {}, by = {}, total = 0, done = 0;
   for (var d = 0; d <= today; d++) {
     var p = paperFor(d); if (!p || seen[p.title]) continue;
-    seen[p.title] = 1; (by[p.theme] = by[p.theme] || []).push({d: d, p: p});
+    seen[p.title] = 1; total++; if (S.quiz[p.title] === 1) done++;
+    if (FILTER === "fav" && !S.fav[p.title]) continue;
+    if (FILTER === "wrong" && S.quiz[p.title] !== 0) continue;
+    (by[p.theme] = by[p.theme] || []).push({d: d, p: p});
   }
-  var html = "";
+  var names = {all: "すべて", fav: "★ お気に入り", wrong: "間違えたクイズ"};
+  var html = '<p class="note" style="margin:0 0 8px">表示済み ' + total + ' 本 ／ クイズ正解 ' + done + ' 本</p><div class="filters">';
+  ["all", "fav", "wrong"].forEach(function(k){
+    html += '<button type="button" data-f="' + k + '" aria-pressed="' + (FILTER === k ? "true" : "false") + '">' + names[k] + '</button>';
+  });
+  html += '</div>';
   THEMES.forEach(function(t, i){
     var items = by[i] || [];
     html += '<section class="grp"><h2>' + esc(t) + '（' + items.length + '）</h2>';
-    if (!items.length) html += '<p class="empty">まだありません</p>';
+    if (!items.length) html += '<p class="empty">' + (FILTER === "all" ? "まだありません" : "該当なし") + '</p>';
     items.forEach(function(it){
-      html += '<button type="button" class="row" data-d="' + it.d + '"><span class="t">' + esc(it.p.title) + '</span><span class="d">' + fmt(it.d) + '</span></button>';
+      var q = S.quiz[it.p.title], mk = q === 1 ? '<span class="mk">✓</span>' : (q === 0 ? '<span class="mk bad">✗</span>' : '<span class="mk"></span>');
+      html += '<button type="button" class="row" data-d="' + it.d + '">' + mk + '<span class="t">' + (S.fav[it.p.title] ? "★ " : "") + esc(it.p.title) + '</span><span class="d">' + fmt(it.d) + '</span></button>';
     });
     html += '</section>';
   });
   box.innerHTML = html;
   Array.prototype.forEach.call(box.querySelectorAll(".row"), function(b){
     b.onclick = function(){ openPast(+b.getAttribute("data-d")); };
+  });
+  Array.prototype.forEach.call(box.querySelectorAll(".filters button"), function(b){
+    b.onclick = function(){ FILTER = b.getAttribute("data-f"); renderBack(); };
   });
 }
 function openPast(day){
