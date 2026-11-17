@@ -6,32 +6,42 @@
 <meta name="theme-color" content="#0f6b5c">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
+
 <title>麻酔 毎日1本</title>
 <style>
+/* 配色: 手術室のグリーンを基調にした落ち着いた配色 / レイアウト: 1カラムのカード + 下に12テーマ一覧 */
 :root{
   --bg:#f4f6f5; --card:#ffffff; --ink:#18242a; --muted:#5b6b70; --line:#d9e1df;
-  --accent:#0f6b5c; --tint:#e3f0ed;
+  --accent:#0f6b5c; --accent-ink:#ffffff; --tint:#e3f0ed;
   --font-display:"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP",sans-serif;
   --font-body:"Noto Sans JP","Hiragino Sans","Yu Gothic",sans-serif;
 }
 @media (prefers-color-scheme: dark){
-  :root{
+  :root:not([data-theme="light"]){
     --bg:#10181a; --card:#182326; --ink:#e6eeed; --muted:#97a9ac; --line:#2a393c;
-    --accent:#59c2ad; --tint:#1d3330; color-scheme:dark;
+    --accent:#59c2ad; --accent-ink:#0a1a17; --tint:#1d3330; color-scheme:dark;
   }
+}
+:root[data-theme="dark"]{
+  --bg:#10181a; --card:#182326; --ink:#e6eeed; --muted:#97a9ac; --line:#2a393c;
+  --accent:#59c2ad; --accent-ink:#0a1a17; --tint:#1d3330; color-scheme:dark;
 }
 *{box-sizing:border-box}
 html,body{margin:0}
 body{background:var(--bg);color:var(--ink);font-family:var(--font-body);line-height:1.75;font-size:16px}
 .wrap{max-width:720px;margin:0 auto;padding:16px 16px 48px}
 header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:12px}
-h1{font-family:var(--font-display);font-size:20px;margin:0}
-.date{color:var(--muted);font-size:14px}
+h1{font-family:var(--font-display);font-size:20px;margin:0;text-wrap:balance}
+.date{color:var(--muted);font-size:14px;font-variant-numeric:tabular-nums}
+.nav{display:flex;gap:8px;margin-bottom:12px}
 button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:10px 14px;min-height:44px}
 button:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+.nav button{flex:1}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 18px}
 .chip{display:inline-block;background:var(--tint);color:var(--accent);border-radius:999px;padding:2px 12px;font-size:13px;font-weight:700}
-.card h2{font-family:var(--font-display);font-size:20px;line-height:1.5;margin:12px 0 4px}
+.badge{font-size:13px;color:var(--muted);margin-left:8px}
+.card h2{font-family:var(--font-display);font-size:20px;line-height:1.5;margin:12px 0 4px;text-wrap:balance}
 .cite{color:var(--muted);font-size:14px;margin:0 0 16px}
 .card h3{font-size:14px;color:var(--accent);margin:18px 0 4px;letter-spacing:.04em}
 .card p{margin:0;max-width:65ch}
@@ -46,6 +56,21 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-off
 .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
 .actions a{display:inline-flex;align-items:center;min-height:44px;padding:0 14px;border-radius:10px;border:1px solid var(--accent);color:var(--accent);text-decoration:none;font-weight:700}
 .note{font-size:13px;color:var(--muted);margin-top:16px}
+.list{margin-top:28px}
+.list h2{font-size:15px;margin:0 0 8px;font-family:var(--font-display)}
+.row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;margin-bottom:6px}
+.row .n{font-variant-numeric:tabular-nums;color:var(--muted);width:2em}
+.row .t{flex:1}
+.row .done{color:var(--accent);font-weight:700}
+.row.cur{border-color:var(--accent);background:var(--tint)}
+.tabs{display:flex;gap:8px;margin-bottom:12px}
+.tabs button{flex:1}
+.tabs button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+.grp{margin-bottom:18px}
+.grp h2{font-size:15px;margin:0 0 6px;font-family:var(--font-display)}
+.grp .empty{color:var(--muted);font-size:14px;margin:0}
+.row .d{color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+.back{margin-bottom:12px}
 </style>
 </head>
 <body>
@@ -54,21 +79,28 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-off
     <h1>麻酔 毎日1本</h1>
     <div class="date" id="date"></div>
   </header>
+  <div class="tabs"><button type="button" id="tabToday" aria-pressed="true">今日の1本</button><button type="button" id="tabBack" aria-pressed="false">バックナンバー</button></div>
   <article class="card" id="card"></article>
+  <div id="back" hidden></div>
 </div>
+
 <script>
-// 起点日。12日で全テーマを一巡し、各テーマに論文が増えると次の周回から新しい論文が出る。
+// 起点日: この日が「1日目」。12日で全テーマを一巡し、各テーマに論文を足すと次の周回から新しい論文が出る。
 var START = Date.UTC(2026, 10, 17);
+
 var THEMES = ["気道管理","区域麻酔","産科麻酔","小児麻酔","循環管理","麻酔薬・筋弛緩","術後回復（ERAS）","術後せん妄・脳","輸液管理","集中治療・鎮静","術後悪心嘔吐","麻酔深度・モニタリング"];
+
 var PAPERS = [];
+
 var PER = THEMES.length;
+
 function todayIndex(){
   var n = new Date();
   return Math.round((Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()) - START) / 86400000);
 }
 function paperFor(day){
-  var d = ((day % PER) + PER) % PER;
-  var round = Math.floor(day / PER);
+  var d = ((day % PER) + PER) % PER;          // 今日のテーマ番号
+  var round = Math.floor(day / PER);           // 何周目か
   var list = PAPERS.filter(function(p){ return p.theme === d; });
   return list[((round % list.length) + list.length) % list.length];
 }
@@ -78,16 +110,17 @@ function fmt(day){
   var w = ["日","月","火","水","木","金","土"][dt.getUTCDay()];
   return dt.getUTCFullYear() + "/" + (dt.getUTCMonth()+1) + "/" + dt.getUTCDate() + "（" + w + "）";
 }
+
 function list(items){ return '<ul>' + items.map(function(f){ return '<li>' + esc(f) + '</li>'; }).join("") + '</ul>'; }
-function render(){
+function render(dayArg){
   var card = document.getElementById("card");
   if (!PAPERS.length) { card.innerHTML = '<p>論文データを読み込めませんでした。ページを開き直してください。</p>'; return; }
-  var day = todayIndex();
+  var day = (typeof dayArg === "number") ? dayArg : todayIndex();
   var p = paperFor(day);
   document.getElementById("date").textContent = fmt(day);
   card.innerHTML = '<span class="chip">' + esc(THEMES[p.theme]) + '</span>' +
     '<h2>' + esc(p.title) + '</h2><p class="cite">' + esc(p.cite) + '</p>' +
-    '<h3>今日の問い</h3><p class="lead">' + esc(p.question) + '</p>' +
+    '<h3>問い</h3><p class="lead">' + esc(p.question) + '</p>' +
     '<h3>背景</h3><p>' + esc(p.background) + '</p>' +
     '<h3>方法</h3><p>' + esc(p.design) + '</p>' +
     '<h3>結果</h3>' + list(p.findings) +
@@ -116,6 +149,49 @@ function quiz(p){
     };
   });
 }
+
+function showTab(name){
+  var b = name === "back";
+  document.getElementById("tabToday").setAttribute("aria-pressed", b ? "false" : "true");
+  document.getElementById("tabBack").setAttribute("aria-pressed", b ? "true" : "false");
+  document.getElementById("card").hidden = b;
+  document.getElementById("back").hidden = !b;
+  if (b) renderBack(); else render();
+  window.scrollTo(0, 0);
+}
+function renderBack(){
+  var box = document.getElementById("back"), today = todayIndex(), seen = {}, by = {};
+  for (var d = 0; d <= today; d++) {
+    var p = paperFor(d); if (!p || seen[p.title]) continue;
+    seen[p.title] = 1; (by[p.theme] = by[p.theme] || []).push({d: d, p: p});
+  }
+  var html = "";
+  THEMES.forEach(function(t, i){
+    var items = by[i] || [];
+    html += '<section class="grp"><h2>' + esc(t) + '（' + items.length + '）</h2>';
+    if (!items.length) html += '<p class="empty">まだありません</p>';
+    items.forEach(function(it){
+      html += '<button type="button" class="row" data-d="' + it.d + '"><span class="t">' + esc(it.p.title) + '</span><span class="d">' + fmt(it.d) + '</span></button>';
+    });
+    html += '</section>';
+  });
+  box.innerHTML = html;
+  Array.prototype.forEach.call(box.querySelectorAll(".row"), function(b){
+    b.onclick = function(){ openPast(+b.getAttribute("data-d")); };
+  });
+}
+function openPast(day){
+  document.getElementById("back").hidden = true;
+  document.getElementById("card").hidden = false;
+  render(day);
+  var c = document.getElementById("card");
+  var bt = document.createElement("button"); bt.type = "button"; bt.className = "back"; bt.textContent = "← バックナンバーに戻る";
+  bt.onclick = function(){ showTab("back"); };
+  c.insertBefore(bt, c.firstChild);
+  window.scrollTo(0, 0);
+}
+document.getElementById("tabToday").onclick = function(){ showTab("today"); };
+document.getElementById("tabBack").onclick = function(){ showTab("back"); };
 fetch("papers.json").then(function(r){ return r.json(); }).then(function(d){ PAPERS = d; render(); }).catch(function(){ render(); });
 if ("serviceWorker" in navigator) { navigator.serviceWorker.register("sw.js").catch(function(){}); }
 </script>
